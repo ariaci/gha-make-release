@@ -1,0 +1,47 @@
+name: "Make Release"
+description: "Create a GitHub Release with artifacts and SHA256 checksums"
+
+inputs:
+  path:
+    description: "Directory containing downloaded artifacts"
+    required: false
+    default: "artifacts"
+  act-artifact-name:
+    description: "Artifact name used during local act execution"
+    required: false
+    default: "act-release-artifacts"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Flatten artifact directory
+      shell: bash
+      env:
+        ARTIFACT_PATH: ${{ inputs.path }}
+      run: |
+        cd "$ARTIFACT_PATH"
+        find . -mindepth 2 -type f -print0 | xargs -0 -I{} mv "{}" .
+        find . -mindepth 1 -type d -empty -delete
+
+    - name: Generate SHA256SUMS
+      shell: bash
+      env:
+        ARTIFACT_PATH: ${{ inputs.path }}
+      run: |
+        cd "$ARTIFACT_PATH"
+        find . -type f -printf "%P\0" | sort -z | xargs -0 sha256sum >../SHA256SUMS
+        mv ../SHA256SUMS .
+
+    - name: Create GitHub Release
+      if: ${{ !env.ACT }}
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: ${{ github.ref_name }}
+        files: ${{ inputs.path }}/**/*
+
+    - name: Upload artifacts for ACT testing
+      if: ${{ env.ACT }}
+      uses: actions/upload-artifact@v5
+      with:
+        name: ${{ inputs.act-artifact-name }}
+        path: ${{ inputs.path }}/*
